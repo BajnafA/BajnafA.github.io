@@ -1,0 +1,50 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using System.Globalization
+@inject IStringLocalizer<SharedResource> L
+@inject PersistentComponentState ApplicationState
+
+<div class="page-wrapper">
+    <NavHeader />
+
+    <main class="container" style="flex: 1; padding-block: var(--space-xl);">
+        @Body
+    </main>
+
+    <footer class="footer">
+        <span class="footer-diamond"></span>
+        @L["QuizBy"]
+        <span class="footer-diamond"></span>
+    </footer>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">&#x1F5D9;</span>
+</div>
+
+@code {
+    private PersistingComponentStateSubscription _subscription;
+
+    protected override void OnInitialized()
+    {
+        _subscription = ApplicationState.RegisterOnPersisting(() =>
+        {
+            ApplicationState.PersistAsJson("culture", CultureInfo.CurrentUICulture.Name);
+            return Task.CompletedTask;
+        });
+
+        if (ApplicationState.TryTakeFromJson<string>("culture", out var culture) && !string.IsNullOrEmpty(culture))
+        {
+            var ci = new CultureInfo(culture);
+            CultureInfo.CurrentCulture = ci;
+            CultureInfo.CurrentUICulture = ci;
+        }
+    }
+
+    public void Dispose()
+    {
+        _subscription.Dispose();
+    }
+}

@@ -1,0 +1,18 @@
+@using System.Globalization
+@inject NavigationManager Nav
+
+<div class="lang-toggle">
+    <a class="@(IsCurrentCulture("en") ? "active" : "")" href="@GetCultureUrl("en")" data-enhance-nav="false">EN</a>
+    <a class="@(IsCurrentCulture("ar") ? "active" : "")" href="@GetCultureUrl("ar")" data-enhance-nav="false">عربي</a>
+</div>
+
+@code {
+    private bool IsCurrentCulture(string culture) =>
+        CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == culture;
+
+    private string GetCultureUrl(string culture)
+    {
+        var currentPath = new Uri(Nav.Uri).PathAndQuery;
+        return $"/Culture/Set?culture={culture}&redirectUri={Uri.EscapeDataString(currentPath)}";
+    }
+}

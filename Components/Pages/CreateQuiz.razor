@@ -1,0 +1,295 @@
+@page "/create"
+@rendermode InteractiveServer
+@inject IStringLocalizer<SharedResource> L
+@inject QuizService QuizSvc
+@inject NavigationManager Nav
+
+<PageTitle>@L["CreateQuiz"] — @L["AppTitle"]</PageTitle>
+
+<div class="container--narrow" style="margin-inline: auto;">
+
+    @* Step Progress *@
+    <div class="steps">
+        <div class="step @(step >= 1 ? "active" : "") @(step > 1 ? "completed" : "")">
+            <div class="step-diamond"></div>
+            <span class="step-label">@L["StepTitle"]</span>
+        </div>
+        <div class="step-line @(step > 1 ? "completed" : "")"></div>
+        <div class="step @(step >= 2 ? "active" : "") @(step > 2 ? "completed" : "")">
+            <div class="step-diamond"></div>
+            <span class="step-label">@L["StepQuestions"]</span>
+        </div>
+        <div class="step-line @(step > 2 ? "completed" : "")"></div>
+        <div class="step @(step >= 3 ? "active" : "") @(step > 3 ? "completed" : "")">
+            <div class="step-diamond"></div>
+            <span class="step-label">@L["StepReview"]</span>
+        </div>
+    </div>
+
+    @if (createdQuiz != null)
+    {
+        @* Success State *@
+        <div class="success-section animate-fade-in">
+            <div class="success-icon animate-scale-in">&#10003;</div>
+            <h2>@L["QuizCreated"]</h2>
+            <p class="warning-text">@L["SaveManageLink"]</p>
+
+            <div style="max-width: 560px; margin-inline: auto;">
+                <div class="share-box mb-md">
+                    <span class="share-box-label">@L["ShareLink"]</span>
+                    <span class="share-box-value">@createdQuiz!.ShareCode</span>
+                    <button class="btn btn-outline btn-sm" @onclick='() => CopyToClipboard(GetShareUrl(), "share")'>@(copiedKey == "share" ? L["Copied"] : L["CopyLink"])</button>
+                </div>
+
+                <div class="share-box mb-xl">
+                    <span class="share-box-label">@L["ManageLink"]</span>
+                    <span class="share-box-value">@createdQuiz!.ManageCode</span>
+                    <button class="btn btn-outline btn-sm" @onclick='() => CopyToClipboard(GetManageUrl(), "manage")'>@(copiedKey == "manage" ? L["Copied"] : L["CopyLink"])</button>
+                </div>
+
+                <div class="flex-center gap-md" style="flex-wrap: wrap;">
+                    <a href="/manage/@createdQuiz.ManageCode" class="btn btn-primary">@L["Results"]</a>
+                    <a href="/" class="btn btn-ghost">@L["BackHome"]</a>
+                </div>
+            </div>
+        </div>
+    }
+    else if (step == 1)
+    {
+        @* Step 1: Title & Description *@
+        <div class="card animate-fade-in">
+            <div class="form-group">
+                <label class="form-label">@L["QuizTitle"]</label>
+                <input type="text" class="form-input" @bind="title" placeholder="@L["QuizTitle"]" maxlength="200" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">@L["QuizDescription"]</label>
+                <textarea class="form-input" @bind="description" placeholder="@L["QuizDescription"]" maxlength="1000" rows="3"></textarea>
+            </div>
+            <div style="text-align: end;">
+                <button class="btn btn-primary" @onclick="GoToStep2" disabled="@string.IsNullOrWhiteSpace(title)">@L["Next"]</button>
+            </div>
+        </div>
+    }
+    else if (step == 2)
+    {
+        @* Step 2: Questions *@
+        <div class="animate-fade-in">
+            @for (int i = 0; i < questions.Count; i++)
+            {
+                var idx = i;
+                <div class="question-block animate-slide-in" style="animation-delay: @(i * 0.05)s;">
+                    <div class="question-header">
+                        <span class="question-number">@L["Question"] @(idx + 1)</span>
+                        @if (questions.Count > 1)
+                        {
+                            <button class="btn btn-ghost btn-sm" @onclick="() => RemoveQuestion(idx)">@L["RemoveQuestion"]</button>
+                        }
+                    </div>
+
+                    <input type="text"
+                           class="form-input"
+                           placeholder="@L["QuestionText"]"
+                           @bind="questions[idx].Text"
+                           maxlength="500" />
+
+                    <div class="options-list">
+                        @for (int j = 0; j < questions[idx].Options.Count; j++)
+                        {
+                            var optIdx = j;
+                            var qIdx = idx;
+                            <div class="option-row">
+                                <input type="radio"
+                                       class="option-radio"
+                                       name="correct-@qIdx"
+                                       checked="@questions[qIdx].Options.ElementAt(optIdx).IsCorrect"
+                                       @onchange="() => SetCorrectOption(qIdx, optIdx)" />
+                                <input type="text"
+                                       class="form-input option-input"
+                                       placeholder="@L["OptionText"]"
+                                       @bind="((List<AnswerOption>)questions[qIdx].Options)[optIdx].Text"
+                                       maxlength="300" />
+                                @if (questions[qIdx].Options.Count > 2)
+                                {
+                                    <button class="btn-icon" @onclick="() => RemoveOption(qIdx, optIdx)" title="Remove">&#x2715;</button>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (questions[idx].Options.Count < 6)
+                    {
+                        <button class="btn btn-ghost btn-sm mt-md" @onclick="() => AddOption(idx)">+ @L["AddOption"]</button>
+                    }
+                </div>
+            }
+
+            <button class="btn btn-outline w-full mb-lg" @onclick="AddQuestion">+ @L["AddQuestion"]</button>
+
+            <div class="flex-between">
+                <button class="btn btn-ghost" @onclick="() => step = 1">@L["Previous"]</button>
+                <button class="btn btn-primary" @onclick="GoToStep3" disabled="@(!IsQuestionsValid())">@L["Next"]</button>
+            </div>
+        </div>
+    }
+    else if (step == 3)
+    {
+        @* Step 3: Review *@
+        <div class="animate-fade-in">
+            <div class="card mb-lg">
+                <h3>@title</h3>
+                @if (!string.IsNullOrWhiteSpace(description))
+                {
+                    <p class="text-muted mt-md">@description</p>
+                }
+            </div>
+
+            <div class="section-title">
+                <h3>@L["Questions"] (@questions.Count)</h3>
+            </div>
+
+            @for (int i = 0; i < questions.Count; i++)
+            {
+                <div class="review-question">
+                    <div class="review-question-title">
+                        <span class="review-question-number">@(i + 1).</span>
+                        @questions[i].Text
+                    </div>
+                    <div class="review-options">
+                        @foreach (var opt in questions[i].Options)
+                        {
+                            <div class="review-option @(opt.IsCorrect ? "correct" : "")">
+                                @(opt.IsCorrect ? "&#10003; " : "")@opt.Text
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="flex-between mt-xl">
+                <button class="btn btn-ghost" @onclick="() => step = 2">@L["Previous"]</button>
+                <button class="btn btn-primary btn-lg" @onclick="PublishQuiz" disabled="@isPublishing">
+                    @if (isPublishing) { <span>...</span> } else { @L["Publish"] }
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private int step = 1;
+    private string title = "";
+    private string? description;
+    private List<Question> questions = new();
+    private Quiz? createdQuiz;
+    private bool isPublishing;
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        questions.Add(CreateEmptyQuestion(0));
+    }
+
+    private Question CreateEmptyQuestion(int order)
+    {
+        return new Question
+        {
+            OrderIndex = order,
+            Options = new List<AnswerOption>
+            {
+                new() { Text = "", OrderIndex = 0, IsCorrect = true },
+                new() { Text = "", OrderIndex = 1 }
+            }
+        };
+    }
+
+    private void AddQuestion()
+    {
+        questions.Add(CreateEmptyQuestion(questions.Count));
+    }
+
+    private void RemoveQuestion(int idx)
+    {
+        questions.RemoveAt(idx);
+        for (int i = 0; i < questions.Count; i++)
+            questions[i].OrderIndex = i;
+    }
+
+    private void AddOption(int qIdx)
+    {
+        var opts = (List<AnswerOption>)questions[qIdx].Options;
+        opts.Add(new AnswerOption { Text = "", OrderIndex = opts.Count });
+    }
+
+    private void RemoveOption(int qIdx, int optIdx)
+    {
+        var opts = (List<AnswerOption>)questions[qIdx].Options;
+        bool wasCorrect = opts[optIdx].IsCorrect;
+        opts.RemoveAt(optIdx);
+        if (wasCorrect && opts.Count > 0)
+            opts[0].IsCorrect = true;
+        for (int i = 0; i < opts.Count; i++)
+            opts[i].OrderIndex = i;
+    }
+
+    private void SetCorrectOption(int qIdx, int optIdx)
+    {
+        var opts = (List<AnswerOption>)questions[qIdx].Options;
+        for (int i = 0; i < opts.Count; i++)
+            opts[i].IsCorrect = i == optIdx;
+    }
+
+    private void GoToStep2()
+    {
+        if (!string.IsNullOrWhiteSpace(title)) step = 2;
+    }
+
+    private void GoToStep3()
+    {
+        if (IsQuestionsValid()) step = 3;
+    }
+
+    private bool IsQuestionsValid()
+    {
+        return questions.All(q =>
+            !string.IsNullOrWhiteSpace(q.Text) &&
+            q.Options.Count >= 2 &&
+            q.Options.All(o => !string.IsNullOrWhiteSpace(o.Text)) &&
+            q.Options.Any(o => o.IsCorrect));
+    }
+
+    private async Task PublishQuiz()
+    {
+        if (isPublishing) return;
+        isPublishing = true;
+
+        try
+        {
+            createdQuiz = await QuizSvc.CreateQuizAsync(title.Trim(), description?.Trim(), questions);
+            step = 4;
+        }
+        finally
+        {
+            isPublishing = false;
+        }
+    }
+
+    private string GetShareUrl() =>
+        $"{Nav.BaseUri}quiz/{createdQuiz!.ShareCode}";
+
+    private string GetManageUrl() =>
+        $"{Nav.BaseUri}manage/{createdQuiz!.ManageCode}";
+
+    private string? copiedKey;
+
+    private async Task CopyToClipboard(string text, string key)
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", text);
+        copiedKey = key;
+        StateHasChanged();
+        await Task.Delay(2000);
+        copiedKey = null;
+        StateHasChanged();
+    }
+}

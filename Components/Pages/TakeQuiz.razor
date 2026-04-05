@@ -1,0 +1,180 @@
+@page "/quiz/{ShareCode}"
+@rendermode InteractiveServer
+@inject IStringLocalizer<SharedResource> L
+@inject QuizService QuizSvc
+@inject AttemptService AttemptSvc
+@inject NavigationManager Nav
+
+<PageTitle>@(quiz?.Title ?? L["TakeQuiz"]) — @L["AppTitle"]</PageTitle>
+
+<div class="container--narrow" style="margin-inline: auto;">
+    @if (loading)
+    {
+        <div class="text-center mt-xl">
+            <p class="text-muted">...</p>
+        </div>
+    }
+    else if (quiz == null)
+    {
+        <div class="not-found animate-fade-in">
+            <h2>@L["QuizNotFound"]</h2>
+            <a href="/" class="btn btn-primary mt-lg">@L["BackHome"]</a>
+        </div>
+    }
+    else if (string.IsNullOrWhiteSpace(participantName))
+    {
+        @* Name Entry *@
+        <div class="name-entry animate-fade-in">
+            <h2>@quiz.Title</h2>
+            @if (!string.IsNullOrWhiteSpace(quiz.Description))
+            {
+                <p>@quiz.Description</p>
+            }
+            <p class="text-muted text-sm mt-md">@quiz.Questions.Count @L["Questions"]</p>
+
+            <div class="name-form mt-xl">
+                <input type="text"
+                       class="form-input form-input--boxed"
+                       placeholder="@L["EnterName"]"
+                       @bind="nameInput"
+                       @bind:event="oninput"
+                       @onkeydown="HandleNameKeyDown"
+                       maxlength="100" />
+                <button class="btn btn-primary btn-lg"
+                        @onclick="StartQuiz"
+                        disabled="@string.IsNullOrWhiteSpace(nameInput)">
+                    @L["StartQuiz"]
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        @* Quiz Taking *@
+        <div class="animate-fade-in">
+            <div class="quiz-progress">
+                @for (int i = 0; i < quiz.Questions.Count; i++)
+                {
+                    var cls = i == currentQuestion ? "active" : (answers.ContainsKey(questionList[i].Id) ? "answered" : "");
+                    <div class="progress-dot @cls"></div>
+                }
+            </div>
+
+            <p class="text-center text-muted text-sm mb-lg">
+                @(currentQuestion + 1) @L["Of"] @quiz.Questions.Count
+            </p>
+
+            @{
+                var q = questionList[currentQuestion];
+            }
+
+            <div class="quiz-question-card animate-fade-in" @key="q.Id">
+                <h2>@q.Text</h2>
+
+                @foreach (var opt in q.Options)
+                {
+                    var isSelected = answers.TryGetValue(q.Id, out var sel) && sel == opt.Id;
+                    <button class="quiz-option @(isSelected ? "selected" : "")"
+                            @onclick="() => SelectOption(q.Id, opt.Id)">
+                        @opt.Text
+                    </button>
+                }
+            </div>
+
+            <div class="quiz-nav">
+                <button class="btn btn-ghost"
+                        @onclick="PrevQuestion"
+                        disabled="@(currentQuestion == 0)">
+                    @L["Previous"]
+                </button>
+
+                @if (currentQuestion < quiz.Questions.Count - 1)
+                {
+                    <button class="btn btn-primary"
+                            @onclick="NextQuestion"
+                            disabled="@(!answers.ContainsKey(q.Id))">
+                        @L["Next"]
+                    </button>
+                }
+                else
+                {
+                    <button class="btn btn-primary btn-lg"
+                            @onclick="SubmitQuiz"
+                            disabled="@(answers.Count < quiz.Questions.Count || isSubmitting)">
+                        @if (isSubmitting) { <span>...</span> } else { @L["Submit"] }
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string ShareCode { get; set; } = "";
+
+    private Quiz? quiz;
+    private List<Question> questionList = new();
+    private bool loading = true;
+    private string nameInput = "";
+    private string participantName = "";
+    private int currentQuestion = 0;
+    private Dictionary<int, int> answers = new();
+    private bool isSubmitting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        quiz = await QuizSvc.GetByShareCodeAsync(ShareCode.ToUpperInvariant());
+        if (quiz != null)
+        {
+            questionList = quiz.Questions.OrderBy(q => q.OrderIndex).ToList();
+        }
+        loading = false;
+    }
+
+    private void HandleNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") StartQuiz();
+    }
+
+    private void StartQuiz()
+    {
+        if (!string.IsNullOrWhiteSpace(nameInput))
+            participantName = nameInput.Trim();
+    }
+
+    private void SelectOption(int questionId, int optionId)
+    {
+        answers[questionId] = optionId;
+    }
+
+    private void NextQuestion()
+    {
+        if (currentQuestion < questionList.Count - 1)
+            currentQuestion++;
+    }
+
+    private void PrevQuestion()
+    {
+        if (currentQuestion > 0)
+            currentQuestion--;
+    }
+
+    private async Task SubmitQuiz()
+    {
+        if (isSubmitting || quiz == null) return;
+        isSubmitting = true;
+
+        try
+        {
+            var attempt = await AttemptSvc.SubmitAttemptAsync(quiz.Id, participantName, answers);
+            if (attempt != null)
+            {
+                Nav.NavigateTo($"/quiz/{ShareCode}/complete/{attempt.Id}");
+            }
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}
